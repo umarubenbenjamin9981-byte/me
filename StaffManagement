@@ -1,0 +1,551 @@
+import React, { useState, useEffect } from 'react';
+import { base44 } from '@/api/base44Client';
+import { useQuery } from '@tanstack/react-query';
+import { 
+  Users, 
+  UserPlus, 
+  UserCheck,
+  UserX,
+  Edit,
+  Eye,
+  EyeOff,
+  Shield,
+  Building2,
+  Calendar
+} from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import MetricCard from '../components/shared/MetricCard';
+import FilterBar from '../components/shared/FilterBar';
+import ExportButton from '../components/shared/ExportButton';
+import StatusBadge from '../components/shared/StatusBadge';
+import { cn } from "@/lib/utils";
+
+export default function StaffManagement() {
+  const [filters, setFilters] = useState({});
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeptDialog, setShowDeptDialog] = useState(false);
+  const [selectedStaff, setSelectedStaff] = useState(null);
+  const [showLoginDetails, setShowLoginDetails] = useState({});
+  const [newDepartment, setNewDepartment] = useState('');
+  const [formData, setFormData] = useState({
+    full_name: '',
+    email: '',
+    phone: '',
+    role: '',
+    department: '',
+    joined_date: '',
+    employee_id: '',
+    address: '',
+    emergency_contact: '',
+    firebase_uid: '',
+    login_email: '',
+    notes: '',
+  });
+
+  const { data: staff = [], isLoading, refetch } = useQuery({
+    queryKey: ['staff'],
+    queryFn: () => base44.entities.Staff.list('-created_date', 500),
+    refetchInterval: 30000,
+  });
+
+  useEffect(() => {
+    const unsubscribe = base44.entities.Staff.subscribe(() => refetch());
+    return unsubscribe;
+  }, [refetch]);
+
+  const filteredStaff = staff.filter(s => {
+    if (filters.search && !s.full_name?.toLowerCase().includes(filters.search.toLowerCase()) &&
+        !s.email?.toLowerCase().includes(filters.search.toLowerCase()) &&
+        !s.employee_id?.toLowerCase().includes(filters.search.toLowerCase())) {
+      return false;
+    }
+    if (filters.role && filters.role !== 'all' && s.role !== filters.role) return false;
+    if (filters.department && filters.department !== 'all' && s.department !== filters.department) return false;
+    if (filters.status && filters.status !== 'all' && s.status !== filters.status) return false;
+    return true;
+  });
+
+  const metrics = {
+    total: staff.length,
+    active: staff.filter(s => s.status === 'Active').length,
+    suspended: staff.filter(s => s.status === 'Suspended').length,
+    departments: [...new Set(staff.map(s => s.department))].length,
+  };
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    await base44.entities.Staff.create({
+      ...formData,
+      status: 'Active',
+    });
+    refetch();
+    setShowAddDialog(false);
+    resetForm();
+  };
+
+  const handleUpdate = async (e) => {
+    e.preventDefault();
+    await base44.entities.Staff.update(selectedStaff.id, formData);
+    refetch();
+    setShowEditDialog(false);
+    resetForm();
+  };
+
+  const handleStatusChange = async (staffId, newStatus) => {
+    await base44.entities.Staff.update(staffId, { status: newStatus });
+    refetch();
+  };
+
+  const handleRoleChange = async (staffId, newRole) => {
+    await base44.entities.Staff.update(staffId, { role: newRole });
+    refetch();
+  };
+
+  const handleDepartmentChange = async (staffId, newDept) => {
+    await base44.entities.Staff.update(staffId, { department: newDept });
+    refetch();
+  };
+
+  const handleAddDepartment = () => {
+    setShowDeptDialog(true);
+  };
+
+  const openEdit = (staff) => {
+    setSelectedStaff(staff);
+    setFormData({
+      full_name: staff.full_name || '',
+      email: staff.email || '',
+      phone: staff.phone || '',
+      role: staff.role || '',
+      department: staff.department || '',
+      joined_date: staff.joined_date || '',
+      employee_id: staff.employee_id || '',
+      address: staff.address || '',
+      emergency_contact: staff.emergency_contact || '',
+      firebase_uid: staff.firebase_uid || '',
+      login_email: staff.login_email || '',
+      notes: staff.notes || '',
+    });
+    setShowEditDialog(true);
+  };
+
+  const resetForm = () => {
+    setFormData({
+      full_name: '',
+      email: '',
+      phone: '',
+      role: '',
+      department: '',
+      joined_date: '',
+      employee_id: '',
+      address: '',
+      emergency_contact: '',
+      firebase_uid: '',
+      login_email: '',
+      notes: '',
+    });
+    setSelectedStaff(null);
+  };
+
+  const filterConfig = [
+    { key: 'search', type: 'search', placeholder: 'Search staff...' },
+    { key: 'role', type: 'select', label: 'Role', placeholder: 'Role', options: [
+      { value: 'Admin', label: 'Admin' },
+      { value: 'Manager', label: 'Manager' },
+      { value: 'Operator', label: 'Operator' },
+      { value: 'Accountant', label: 'Accountant' },
+      { value: 'Storekeeper', label: 'Storekeeper' },
+      { value: 'Supervisor', label: 'Supervisor' },
+    ]},
+    { key: 'department', type: 'select', label: 'Department', placeholder: 'Department', options: [
+      { value: 'Production', label: 'Production' },
+      { value: 'Finance', label: 'Finance' },
+      { value: 'Store', label: 'Store' },
+      { value: 'IT', label: 'IT' },
+      { value: 'Admin', label: 'Admin' },
+      { value: 'Security', label: 'Security' },
+      { value: 'HR', label: 'HR' },
+    ]},
+    { key: 'status', type: 'select', label: 'Status', placeholder: 'Status', options: [
+      { value: 'Active', label: 'Active' },
+      { value: 'Suspended', label: 'Suspended' },
+      { value: 'Inactive', label: 'Inactive' },
+    ]},
+  ];
+
+  const exportColumns = [
+    { key: 'employee_id', label: 'Employee ID', accessor: (row) => row.employee_id },
+    { key: 'full_name', label: 'Full Name', accessor: (row) => row.full_name },
+    { key: 'email', label: 'Email', accessor: (row) => row.email },
+    { key: 'role', label: 'Role', accessor: (row) => row.role },
+    { key: 'department', label: 'Department', accessor: (row) => row.department },
+    { key: 'status', label: 'Status', accessor: (row) => row.status },
+    { key: 'joined_date', label: 'Joined Date', accessor: (row) => row.joined_date },
+  ];
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="animate-pulse text-slate-500">Loading staff...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="bg-white border-b border-slate-200 px-6 py-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Staff Management</h1>
+            <p className="text-sm text-slate-500 mt-1">Manage staff members, roles, and departments</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <ExportButton data={filteredStaff} filename="staff-list" columns={exportColumns} />
+            <Button variant="outline" onClick={handleAddDepartment}>
+              <Building2 className="w-4 h-4 mr-2" />
+              Add Department
+            </Button>
+            <Button onClick={() => setShowAddDialog(true)}>
+              <UserPlus className="w-4 h-4 mr-2" />
+              Add Staff
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-6 space-y-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <MetricCard title="Total Staff" value={metrics.total} icon={Users} variant="primary" />
+          <MetricCard title="Active" value={metrics.active} icon={UserCheck} variant="success" />
+          <MetricCard title="Suspended" value={metrics.suspended} icon={UserX} variant="danger" />
+          <MetricCard title="Departments" value={metrics.departments} icon={Building2} />
+        </div>
+
+        <FilterBar
+          filters={filterConfig}
+          values={filters}
+          onChange={setFilters}
+          onReset={() => setFilters({})}
+        />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredStaff.map((member) => (
+            <Card key={member.id} className="p-5 border-slate-200 hover:shadow-md transition-shadow">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-slate-700 to-slate-900 flex items-center justify-center">
+                    <span className="text-white font-semibold text-lg">
+                      {member.full_name?.charAt(0) || 'S'}
+                    </span>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-slate-900">{member.full_name}</h3>
+                    <p className="text-xs text-slate-500">{member.employee_id}</p>
+                  </div>
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm">•••</Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => openEdit(member)}>
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit Details
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => { setSelectedStaff(member); setShowDeptDialog(true); }}>
+                      <Building2 className="w-4 h-4 mr-2" />
+                      Assign Department
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleStatusChange(member.id, member.status === 'Active' ? 'Suspended' : 'Active')}>
+                      {member.status === 'Active' ? (
+                        <><UserX className="w-4 h-4 mr-2" />Suspend Staff</>
+                      ) : (
+                        <><UserCheck className="w-4 h-4 mr-2" />Activate Staff</>
+                      )}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              <div className="space-y-2 mb-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <Shield className="w-4 h-4 text-slate-400" />
+                  <span className="text-slate-600">{member.role}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <Building2 className="w-4 h-4 text-slate-400" />
+                  <span className="text-slate-600">{member.department}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <Calendar className="w-4 h-4 text-slate-400" />
+                  <span className="text-slate-600">Joined: {new Date(member.joined_date).toLocaleDateString()}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                <StatusBadge status={member.status} />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowLoginDetails(prev => ({ ...prev, [member.id]: !prev[member.id] }))}
+                >
+                  {showLoginDetails[member.id] ? (
+                    <><EyeOff className="w-4 h-4 mr-1" />Hide</>
+                  ) : (
+                    <><Eye className="w-4 h-4 mr-1" />Show Login</>
+                  )}
+                </Button>
+              </div>
+
+              {showLoginDetails[member.id] && (
+                <div className="mt-3 p-3 bg-slate-50 rounded-lg space-y-1 text-sm">
+                  <p className="text-slate-600"><strong>Email:</strong> {member.login_email || member.email}</p>
+                  <p className="text-slate-600"><strong>UID:</strong> {member.firebase_uid || 'Not set'}</p>
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      {/* Add Staff Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add New Staff Member</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreate} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Full Name *</Label>
+                <Input value={formData.full_name} onChange={(e) => setFormData({...formData, full_name: e.target.value})} required />
+              </div>
+              <div>
+                <Label>Employee ID</Label>
+                <Input value={formData.employee_id} onChange={(e) => setFormData({...formData, employee_id: e.target.value})} />
+              </div>
+              <div>
+                <Label>Email *</Label>
+                <Input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required />
+              </div>
+              <div>
+                <Label>Phone</Label>
+                <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} />
+              </div>
+              <div>
+                <Label>Role *</Label>
+                <Select value={formData.role} onValueChange={(v) => setFormData({...formData, role: v})} required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Admin">Admin</SelectItem>
+                    <SelectItem value="Manager">Manager</SelectItem>
+                    <SelectItem value="Operator">Operator</SelectItem>
+                    <SelectItem value="Accountant">Accountant</SelectItem>
+                    <SelectItem value="Storekeeper">Storekeeper</SelectItem>
+                    <SelectItem value="Supervisor">Supervisor</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Department *</Label>
+                <Select value={formData.department} onValueChange={(v) => setFormData({...formData, department: v})} required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Production">Production</SelectItem>
+                    <SelectItem value="Finance">Finance</SelectItem>
+                    <SelectItem value="Store">Store</SelectItem>
+                    <SelectItem value="IT">IT</SelectItem>
+                    <SelectItem value="Admin">Admin</SelectItem>
+                    <SelectItem value="Security">Security</SelectItem>
+                    <SelectItem value="HR">HR</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Joined Date *</Label>
+                <Input type="date" value={formData.joined_date} onChange={(e) => setFormData({...formData, joined_date: e.target.value})} required />
+              </div>
+              <div>
+                <Label>Firebase UID</Label>
+                <Input value={formData.firebase_uid} onChange={(e) => setFormData({...formData, firebase_uid: e.target.value})} />
+              </div>
+              <div className="col-span-2">
+                <Label>Login Email</Label>
+                <Input type="email" value={formData.login_email} onChange={(e) => setFormData({...formData, login_email: e.target.value})} />
+              </div>
+              <div className="col-span-2">
+                <Label>Address</Label>
+                <Input value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} />
+              </div>
+              <div className="col-span-2">
+                <Label>Emergency Contact</Label>
+                <Input value={formData.emergency_contact} onChange={(e) => setFormData({...formData, emergency_contact: e.target.value})} />
+              </div>
+              <div className="col-span-2">
+                <Label>Notes</Label>
+                <Textarea value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} rows={2} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button type="button" variant="outline" onClick={() => { setShowAddDialog(false); resetForm(); }}>
+                Cancel
+              </Button>
+              <Button type="submit">Create Staff</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Staff Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Staff Member</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleUpdate} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Full Name *</Label>
+                <Input value={formData.full_name} onChange={(e) => setFormData({...formData, full_name: e.target.value})} required />
+              </div>
+              <div>
+                <Label>Employee ID</Label>
+                <Input value={formData.employee_id} onChange={(e) => setFormData({...formData, employee_id: e.target.value})} />
+              </div>
+              <div>
+                <Label>Email *</Label>
+                <Input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required />
+              </div>
+              <div>
+                <Label>Phone</Label>
+                <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} />
+              </div>
+              <div>
+                <Label>Role *</Label>
+                <Select value={formData.role} onValueChange={(v) => setFormData({...formData, role: v})} required>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Admin">Admin</SelectItem>
+                    <SelectItem value="Manager">Manager</SelectItem>
+                    <SelectItem value="Operator">Operator</SelectItem>
+                    <SelectItem value="Accountant">Accountant</SelectItem>
+                    <SelectItem value="Storekeeper">Storekeeper</SelectItem>
+                    <SelectItem value="Supervisor">Supervisor</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Department *</Label>
+                <Select value={formData.department} onValueChange={(v) => setFormData({...formData, department: v})} required>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Production">Production</SelectItem>
+                    <SelectItem value="Finance">Finance</SelectItem>
+                    <SelectItem value="Store">Store</SelectItem>
+                    <SelectItem value="IT">IT</SelectItem>
+                    <SelectItem value="Admin">Admin</SelectItem>
+                    <SelectItem value="Security">Security</SelectItem>
+                    <SelectItem value="HR">HR</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Joined Date *</Label>
+                <Input type="date" value={formData.joined_date} onChange={(e) => setFormData({...formData, joined_date: e.target.value})} required />
+              </div>
+              <div>
+                <Label>Firebase UID</Label>
+                <Input value={formData.firebase_uid} onChange={(e) => setFormData({...formData, firebase_uid: e.target.value})} />
+              </div>
+              <div className="col-span-2">
+                <Label>Login Email</Label>
+                <Input type="email" value={formData.login_email} onChange={(e) => setFormData({...formData, login_email: e.target.value})} />
+              </div>
+              <div className="col-span-2">
+                <Label>Address</Label>
+                <Input value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} />
+              </div>
+              <div className="col-span-2">
+                <Label>Emergency Contact</Label>
+                <Input value={formData.emergency_contact} onChange={(e) => setFormData({...formData, emergency_contact: e.target.value})} />
+              </div>
+              <div className="col-span-2">
+                <Label>Notes</Label>
+                <Textarea value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} rows={2} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button type="button" variant="outline" onClick={() => { setShowEditDialog(false); resetForm(); }}>
+                Cancel
+              </Button>
+              <Button type="submit">Update Staff</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Department Dialog */}
+      <Dialog open={showDeptDialog} onOpenChange={setShowDeptDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{selectedStaff ? `Assign Department - ${selectedStaff.full_name}` : 'Add New Department'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Department</Label>
+              <Select 
+                value={selectedStaff?.department || newDepartment} 
+                onValueChange={(v) => selectedStaff ? handleDepartmentChange(selectedStaff.id, v) : setNewDepartment(v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select department" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Production">Production</SelectItem>
+                  <SelectItem value="Finance">Finance</SelectItem>
+                  <SelectItem value="Store">Store</SelectItem>
+                  <SelectItem value="IT">IT</SelectItem>
+                  <SelectItem value="Admin">Admin</SelectItem>
+                  <SelectItem value="Security">Security</SelectItem>
+                  <SelectItem value="HR">HR</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={() => { setShowDeptDialog(false); setSelectedStaff(null); setNewDepartment(''); }}>
+                Cancel
+              </Button>
+              <Button onClick={() => { setShowDeptDialog(false); setSelectedStaff(null); setNewDepartment(''); }}>
+                Done
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
