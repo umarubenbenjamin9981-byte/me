@@ -1,0 +1,263 @@
+import React, { useState, useEffect } from 'react';
+import { base44 } from '@/api/base44Client';
+import { useQuery } from '@tanstack/react-query';
+import { 
+  Cpu, 
+  CheckCircle, 
+  XCircle, 
+  RotateCcw, 
+  AlertTriangle,
+  Users,
+  Activity,
+  TrendingUp,
+  Plus
+} from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import MetricCard from '../components/shared/MetricCard';
+import FilterBar from '../components/shared/FilterBar';
+import ExportButton from '../components/shared/ExportButton';
+import DataTable from '../components/shared/DataTable';
+import ChartCard from '../components/shared/ChartCard';
+import EmbeddingForm from '../components/forms/EmbeddingForm';
+
+export default function EmbeddingDashboard() {
+  const [filters, setFilters] = useState({});
+  const [activeTab, setActiveTab] = useState('overview');
+  const [showAddDialog, setShowAddDialog] = useState(false);
+
+  const { data: records = [], isLoading, refetch } = useQuery({
+    queryKey: ['embedding-operations'],
+    queryFn: () => base44.entities.EmbeddingOperation.list('-created_date', 500),
+    refetchInterval: 30000,
+  });
+
+  useEffect(() => {
+    const unsubscribe = base44.entities.EmbeddingOperation.subscribe(() => {
+      refetch();
+    });
+    return unsubscribe;
+  }, [refetch]);
+
+  const filteredRecords = records.filter(record => {
+    if (filters.search && !record.operator_name?.toLowerCase().includes(filters.search.toLowerCase()) &&
+        !record.machine_id?.toLowerCase().includes(filters.search.toLowerCase())) {
+      return false;
+    }
+    if (filters.machine && filters.machine !== 'all' && record.machine_id !== filters.machine) return false;
+    if (filters.shift && filters.shift !== 'all' && record.shift !== filters.shift) return false;
+    if (filters.date) {
+      const recordDate = new Date(record.created_date).toDateString();
+      const filterDate = new Date(filters.date).toDateString();
+      if (recordDate !== filterDate) return false;
+    }
+    return true;
+  });
+
+  // Metrics
+  const metrics = {
+    totalReceived: filteredRecords.reduce((sum, r) => sum + (r.quantity_received || 0), 0),
+    totalGood: filteredRecords.reduce((sum, r) => sum + (r.good_quantity || 0), 0),
+    totalEmbedded: filteredRecords.reduce((sum, r) => sum + (r.quantity_embedded || 0), 0),
+    totalRejected: filteredRecords.reduce((sum, r) => sum + (r.quantity_rejected || 0), 0),
+    totalReturned: filteredRecords.reduce((sum, r) => sum + (r.quantity_returned || 0), 0),
+    discrepancies: filteredRecords.filter(r => r.has_discrepancy).length,
+    uniqueOperators: [...new Set(filteredRecords.map(r => r.operator_name))].length,
+    uniqueMachines: [...new Set(filteredRecords.map(r => r.machine_id))].length,
+  };
+
+  const rejectionRate = metrics.totalReceived > 0 
+    ? ((metrics.totalRejected / metrics.totalReceived) * 100).toFixed(1) 
+    : 0;
+
+  // Charts data
+  const machines = [...new Set(records.map(r => r.machine_id))].filter(Boolean);
+  
+  const machineData = machines.map(machine => {
+    const machineRecords = filteredRecords.filter(r => r.machine_id === machine);
+    return {
+      name: machine,
+      embedded: machineRecords.reduce((sum, r) => sum + (r.quantity_embedded || 0), 0),
+      rejected: machineRecords.reduce((sum, r) => sum + (r.quantity_rejected || 0), 0),
+    };
+  });
+
+  const operatorData = [...new Set(filteredRecords.map(r => r.operator_name))].filter(Boolean).slice(0, 10).map(op => {
+    const opRecords = filteredRecords.filter(r => r.operator_name === op);
+    const totalEmbedded = opRecords.reduce((sum, r) => sum + (r.quantity_embedded || 0), 0);
+    const totalTime = opRecords.reduce((sum, r) => {
+      if (r.start_time && r.end_time) {
+        return sum + (new Date(r.end_time) - new Date(r.start_time)) / 3600000;
+      }
+      return sum;
+    }, 0);
+    return {
+      name: op,
+      efficiency: totalTime > 0 ? Math.round(totalEmbedded / totalTime) : 0,
+    };
+  });
+
+  const rejectionByMachine = machines.map(machine => {
+    const machineRecords = filteredRecords.filter(r => r.machine_id === machine);
+    const totalReceived = machineRecords.reduce((sum, r) => sum + (r.quantity_received || 0), 0);
+    const totalRejected = machineRecords.reduce((sum, r) => sum + (r.quantity_rejected || 0), 0);
+    return {
+      name: machine,
+      rate: totalReceived > 0 ? parseFloat(((totalRejected / totalReceived) * 100).toFixed(1)) : 0,
+    };
+  });
+
+  const filterConfig = [
+    { key: 'search', type: 'search', placeholder: 'Search operator or machine...' },
+    { key: 'machine', type: 'select', label: 'Machines', placeholder: 'Machine', options: machines.map(m => ({ value: m, label: m })) },
+    { key: 'shift', type: 'select', label: 'Shifts', placeholder: 'Shift', options: [
+      { value: 'Morning', label: 'Morning' },
+      { value: 'Afternoon', label: 'Afternoon' },
+      { value: 'Night', label: 'Night' },
+    ]},
+    { key: 'date', type: 'date', placeholder: 'Select date' },
+  ];
+
+  const columns = [
+    { key: 'operator_name', label: 'Operator' },
+    { key: 'machine_id', label: 'Machine' },
+    { key: 'quantity_received', label: 'Received', type: 'number' },
+    { key: 'good_quantity', label: 'Good Qty', type: 'number' },
+    { key: 'quantity_embedded', label: 'Embedded', type: 'number' },
+    { key: 'quantity_rejected', label: 'Rejected', type: 'number' },
+    { key: 'quantity_returned', label: 'Returned', type: 'number' },
+    { key: 'shift', label: 'Shift', type: 'status' },
+    { key: 'end_time', label: 'End Time', type: 'datetime' },
+    { key: 'remarks', label: 'Remarks' },
+    { key: 'created_date', label: 'Date', type: 'date' },
+  ];
+
+  const exportColumns = columns.map(c => ({
+    key: c.key,
+    label: c.label,
+    accessor: (row) => row[c.key],
+  }));
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="animate-pulse text-slate-500">Loading dashboard...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="bg-white border-b border-slate-200 px-6 py-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Embedding Machine</h1>
+            <p className="text-sm text-slate-500 mt-1">Track embedding operations and operator performance</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Real-time
+            </div>
+            <ExportButton data={filteredRecords} filename="embedding-operations" columns={exportColumns} />
+            <Button onClick={() => setShowAddDialog(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Record
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-6 space-y-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <MetricCard title="Received" value={metrics.totalReceived.toLocaleString()} icon={Cpu} variant="primary" />
+          <MetricCard title="Embedded" value={metrics.totalEmbedded.toLocaleString()} icon={CheckCircle} variant="success" />
+          <MetricCard title="Rejected" value={metrics.totalRejected.toLocaleString()} icon={XCircle} variant="danger" />
+          <MetricCard title="Rejection Rate" value={`${rejectionRate}%`} icon={TrendingUp} variant={parseFloat(rejectionRate) > 5 ? "danger" : "success"} />
+        </div>
+
+        <FilterBar
+          filters={filterConfig}
+          values={filters}
+          onChange={setFilters}
+          onReset={() => setFilters({})}
+        />
+
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="bg-white border border-slate-200">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="records">Records</TabsTrigger>
+            <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="mt-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <ChartCard
+                title="Production by Machine"
+                subtitle="Embedded vs Rejected quantities"
+                type="bar"
+                data={machineData}
+                dataKey={['embedded', 'rejected']}
+                colors={['#10b981', '#ef4444']}
+              />
+              <ChartCard
+                title="Rejection Rate by Machine"
+                subtitle="Percentage of rejected cards"
+                type="bar"
+                data={rejectionByMachine}
+                dataKey="rate"
+                colors={['#f59e0b']}
+              />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="records" className="mt-6">
+            <DataTable
+              columns={columns}
+              data={filteredRecords}
+              highlightCondition={(row) => row.has_discrepancy}
+              emptyMessage="No embedding records found"
+            />
+          </TabsContent>
+
+          <TabsContent value="analytics" className="mt-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <ChartCard
+                title="Operator Efficiency"
+                subtitle="Cards embedded per hour"
+                type="bar"
+                data={operatorData}
+                dataKey="efficiency"
+              />
+              <ChartCard
+                title="Machine Utilization"
+                subtitle="Total embedded by machine"
+                type="bar"
+                data={machineData}
+                dataKey="embedded"
+                colors={['#3b82f6']}
+              />
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add Embedding Operation Record</DialogTitle>
+          </DialogHeader>
+          <EmbeddingForm
+            onSubmit={async (data) => {
+              await base44.entities.EmbeddingOperation.create(data);
+              refetch();
+              setShowAddDialog(false);
+            }}
+            onCancel={() => setShowAddDialog(false)}
+          />
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
